@@ -7,6 +7,7 @@ import Sidebar from "./components/Sidebar";
 import SubmitEntry from "./components/SubmitEntry";
 import History from "@/components/History";
 import Dashboard from "@/components/Dashboard";
+import Medicines from "@/components/Medicines";
 
 function Layout() {
   return (
@@ -22,6 +23,7 @@ function Layout() {
             <Route path="/" element={<Dashboard/>} />
             <Route path="/new-entry" element={<SubmitEntry />} />
             <Route path="/history" element={<History/>} />
+            <Route path="/medicines" element={<Medicines />} />
           </Routes>
         </Container>
       </Flex>

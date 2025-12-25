@@ -5,10 +5,10 @@ use std::cmp::{Eq, PartialEq};
 #[derive(Serialize, Deserialize, Debug, EnumIter, DeriveActiveEnum, Clone, PartialEq, Eq)]
 #[sea_orm(rs_type = "String", db_type = "Enum", enum_name = "headache_headache_location")]
 pub enum MedicineType {
-    #[sea_orm(string_value = "AsNeeded")]
-    AsNeeded,
-    #[sea_orm(string_value = "Preventitive")]
-    Preventitive,
+    #[sea_orm(string_value = "Acute")]
+    Acute,
+    #[sea_orm(string_value = "Preventative")]
+    Preventative,
 }
 
 #[sea_orm::model]
