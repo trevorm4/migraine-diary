@@ -1,13 +1,14 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Stack, Box, Text, Divider, Group, UnstyledButton } from '@mantine/core';
-import { Activity, PlusCircle, Calendar, BarChart3, Settings } from 'lucide-react';
+import { Activity, PlusCircle, Calendar, BarChart3, Settings, Pill } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
   const navItems = [
     { path: '/', label: 'Dashboard', icon: Activity },
     { path: '/new-entry', label: 'New Entry', icon: PlusCircle },
     { path: '/history', label: 'History', icon: Calendar },
+    { path: '/medicines', label: 'Medicines', icon: Pill },
   ];
 
   return (
