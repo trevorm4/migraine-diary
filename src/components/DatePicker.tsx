@@ -24,6 +24,7 @@ export default function DatePicker({
         value={value as [Date | null, Date | null]}
         defaultValue={defaultValue}
         onChange={onChange}
+        weekendDays={[]}
         {...others}
       />
     );
@@ -35,6 +36,7 @@ export default function DatePicker({
       defaultValue={defaultValue}
       onChange={onChange}
       valueFormat="MM/DD/YYYY hh:mm A"
+      weekendDays={[]}
       {...others}
     />
   );

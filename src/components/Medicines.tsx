@@ -12,9 +12,14 @@ import {
   Divider,
   Modal,
   ActionIcon,
+  NumberInput,
+  Badge,
+  Collapse,
+  Box,
 } from "@mantine/core";
 import { invoke } from "@tauri-apps/api/core";
-import { Edit, Trash2, Plus } from "lucide-react";
+import { Edit, Trash2, Plus, Settings, ChevronDown, ChevronUp } from "lucide-react";
+import DatePicker from "@/components/DatePicker";
 
 enum MedicineType {
   Preventative = "Preventative",
@@ -26,6 +31,13 @@ interface Medicine {
   name: string;
   medicine_type: MedicineType;
   description: string;
+}
+
+interface MedicineEntry {
+  id: number;
+  medicine_id: number;
+  quantity: number;
+  timestamp: string;
 }
 
 interface TrackMedicationRequest {
@@ -41,10 +53,28 @@ interface EditMedicationRequest {
   description: string;
 }
 
+interface AddMedicationEntryRequest {
+  medicine_id: number;
+  quantity: number;
+  timestamp: string;
+}
+
+interface GetMedicationEntriesRequest {
+  medicine_id: number;
+}
+
 const Medicines: React.FC = () => {
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [loading, setLoading] = useState(true);
   const [error, setError] = useState<string | null>(null);
+
+  // Entries state
+  const [medicineEntries, setMedicineEntries] = useState<Map<number, MedicineEntry[]>>(new Map());
+  const [expandedMedicines, setExpandedMedicines] = useState<Set<number>>(new Set());
+  const [loadingEntries, setLoadingEntries] = useState<Set<number>>(new Set());
+
+  // Management modal state
+  const [manageModalOpen, setManageModalOpen] = useState(false);
 
   const [formState, setFormState] = useState<TrackMedicationRequest>({
     name: "",
@@ -73,6 +103,14 @@ const Medicines: React.FC = () => {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
 
+  // Add medication entry state
+  const [entryModalOpen, setEntryModalOpen] = useState(false);
+  const [selectedMedicine, setSelectedMedicine] = useState<number | null>(null);
+  const [entryQuantity, setEntryQuantity] = useState<number>(1);
+  const [entryTimestamp, setEntryTimestamp] = useState(new Date());
+  const [entrySubmitting, setEntrySubmitting] = useState(false);
+  const [entryError, setEntryError] = useState<string | null>(null);
+
   const fetchMedicines = async () => {
     setLoading(true);
     setError(null);
@@ -88,9 +126,44 @@ const Medicines: React.FC = () => {
     }
   };
 
+  const fetchMedicineEntries = async (medicineId: number) => {
+    setLoadingEntries((prev) => new Set(prev).add(medicineId));
+    try {
+      const request: GetMedicationEntriesRequest = { medicine_id: medicineId };
+      const entries = await invoke<MedicineEntry[]>("get_medication_entries", { request });
+      setMedicineEntries((prev) => {
+        const newMap = new Map(prev);
+        newMap.set(medicineId, entries);
+        return newMap;
+      });
+    } catch (err) {
+      console.error("Failed to fetch entries:", err);
+    } finally {
+      setLoadingEntries((prev) => {
+        const newSet = new Set(prev);
+        newSet.delete(medicineId);
+        return newSet;
+      });
+    }
+  };
+
   useEffect(() => {
     fetchMedicines();
   }, []);
+
+  const toggleExpanded = async (medicineId: number) => {
+    const newExpanded = new Set(expandedMedicines);
+    if (newExpanded.has(medicineId)) {
+      newExpanded.delete(medicineId);
+    } else {
+      newExpanded.add(medicineId);
+      // Fetch entries if we don't have them yet
+      if (!medicineEntries.has(medicineId)) {
+        await fetchMedicineEntries(medicineId);
+      }
+    }
+    setExpandedMedicines(newExpanded);
+  };
 
   const handleInputChange = (
     field: keyof TrackMedicationRequest,
@@ -204,17 +277,64 @@ const Medicines: React.FC = () => {
     setDeleteError(null);
   };
 
+  const handleAddEntry = (medicineId: number) => {
+    setSelectedMedicine(medicineId);
+    setEntryQuantity(1);
+    setEntryTimestamp(new Date());
+    setEntryError(null);
+    setEntryModalOpen(true);
+  };
+
+  const handleEntrySubmit = async (e: React.FormEvent) => {
+    e.preventDefault();
+    if (!selectedMedicine || !entryTimestamp) return;
+
+    setEntrySubmitting(true);
+    setEntryError(null);
+
+    try {
+      const request: AddMedicationEntryRequest = {
+        medicine_id: selectedMedicine,
+        quantity: entryQuantity,
+        timestamp: new Date(entryTimestamp).toISOString(),
+      };
+      await invoke("add_medication_entry", { request });
+      setEntryModalOpen(false);
+      setSelectedMedicine(null);
+      // Refresh entries for this medication
+      await fetchMedicineEntries(selectedMedicine);
+    } catch (err) {
+      setEntryError(
+        err instanceof Error ? err.message : "Failed to add medication entry"
+      );
+    } finally {
+      setEntrySubmitting(false);
+    }
+  };
+
+  const formatDateTime = (timestamp: string) => {
+    const date = new Date(timestamp);
+    return date.toLocaleString(undefined, {
+      year: "numeric",
+      month: "short",
+      day: "numeric",
+      hour: "2-digit",
+      minute: "2-digit",
+    });
+  };
+
   return (
     <Stack>
       <Group justify="space-between" align="center">
         <Text size="xl" fw={700}>
-          Manage Medications
+          Track Medication
         </Text>
         <Button
-          leftSection={<Plus size={18} />}
-          onClick={() => setAddModalOpen(true)}
+          leftSection={<Settings size={18} />}
+          variant="subtle"
+          onClick={() => setManageModalOpen(true)}
         >
-          Add Medication
+          Manage Medications
         </Button>
       </Group>
 
@@ -230,48 +350,166 @@ const Medicines: React.FC = () => {
           </Text>
         )}
         {!loading && !error && medicines.length === 0 && (
-          <Text c="dimmed">You haven't tracked any medications yet.</Text>
+          <Card withBorder radius="md" p="xl">
+            <Stack align="center" gap="md">
+              <Text c="dimmed" ta="center">
+                You haven't added any medications yet.
+              </Text>
+              <Button
+                onClick={() => setManageModalOpen(true)}
+                leftSection={<Plus size={18} />}
+              >
+                Add Your First Medication
+              </Button>
+            </Stack>
+          </Card>
         )}
         {!loading && !error && medicines.length > 0 && (
           <Stack>
-            {medicines.map((med) => (
-              <Card key={med.id} withBorder radius="md">
-                <Group justify="space-between" align="flex-start">
-                  <Stack gap="xs" style={{ flex: 1 }}>
-                    <Text fw={600}>{med.name}</Text>
-                    <Text size="sm" c="dimmed">
-                      {med.medicine_type}
-                    </Text>
+            {medicines.map((med) => {
+              const isExpanded = expandedMedicines.has(med.id);
+              const entries = medicineEntries.get(med.id) || [];
+              const isLoadingEntries = loadingEntries.has(med.id);
+
+              return (
+                <Card key={med.id} withBorder radius="md" p="lg">
+                  <Stack gap="md">
+                    <Group justify="space-between" align="flex-start">
+                      <Stack gap={4}>
+                        <Text fw={600} size="lg">
+                          {med.name}
+                        </Text>
+                        <Group gap="xs">
+                          <Text size="sm" c="dimmed">
+                            {med.medicine_type}
+                          </Text>
+                          {entries.length > 0 && (
+                            <Badge size="sm" variant="light">
+                              {entries.length} {entries.length === 1 ? "entry" : "entries"}
+                            </Badge>
+                          )}
+                        </Group>
+                      </Stack>
+                      <ActionIcon
+                        variant="subtle"
+                        onClick={() => toggleExpanded(med.id)}
+                        aria-label="Toggle entries"
+                      >
+                        {isExpanded ? <ChevronUp size={20} /> : <ChevronDown size={20} />}
+                      </ActionIcon>
+                    </Group>
                     {med.description && (
-                      <Text size="sm" mt="xs">
+                      <Text size="sm" c="dimmed">
                         {med.description}
                       </Text>
                     )}
+
+                    <Collapse in={isExpanded}>
+                      <Box mt="md">
+                        <Divider mb="md" label="Entry History" labelPosition="center" />
+                        {isLoadingEntries ? (
+                          <Group justify="center" p="md">
+                            <Loader size="sm" />
+                          </Group>
+                        ) : entries.length === 0 ? (
+                          <Text size="sm" c="dimmed" ta="center" py="md">
+                            No entries yet
+                          </Text>
+                        ) : (
+                          <Stack gap="xs">
+                            {entries.map((entry) => (
+                              <Card key={entry.id} withBorder p="sm" bg="gray.0">
+                                <Group justify="space-between">
+                                  <Text size="sm">{formatDateTime(entry.timestamp)}</Text>
+                                  <Badge size="sm" variant="filled">
+                                    Qty: {entry.quantity}
+                                  </Badge>
+                                </Group>
+                              </Card>
+                            ))}
+                          </Stack>
+                        )}
+                      </Box>
+                    </Collapse>
+
+                    <Button
+                      fullWidth
+                      leftSection={<Plus size={18} />}
+                      onClick={() => handleAddEntry(med.id)}
+                    >
+                      Log Entry
+                    </Button>
                   </Stack>
-                  <Group gap="xs">
-                    <ActionIcon
-                      variant="subtle"
-                      color="blue"
-                      onClick={() => handleEditClick(med)}
-                      aria-label="Edit medication"
-                    >
-                      <Edit size={18} />
-                    </ActionIcon>
-                    <ActionIcon
-                      variant="subtle"
-                      color="red"
-                      onClick={() => handleDeleteClick(med)}
-                      aria-label="Delete medication"
-                    >
-                      <Trash2 size={18} />
-                    </ActionIcon>
-                  </Group>
-                </Group>
-              </Card>
-            ))}
+                </Card>
+              );
+            })}
           </Stack>
         )}
       </Stack>
+
+      {/* Management Modal */}
+      <Modal
+        opened={manageModalOpen}
+        onClose={() => setManageModalOpen(false)}
+        title="Manage Medications"
+        size="lg"
+      >
+        <Stack>
+          <Button
+            leftSection={<Plus size={18} />}
+            onClick={() => {
+              setManageModalOpen(false);
+              setAddModalOpen(true);
+            }}
+          >
+            Add New Medication
+          </Button>
+          <Divider />
+          {medicines.length === 0 ? (
+            <Text c="dimmed" ta="center" py="xl">
+              No medications yet. Add one to get started.
+            </Text>
+          ) : (
+            <Stack>
+              {medicines.map((med) => (
+                <Card key={med.id} withBorder radius="md">
+                  <Group justify="space-between" align="flex-start">
+                    <Stack gap="xs" style={{ flex: 1 }}>
+                      <Text fw={600}>{med.name}</Text>
+                      <Text size="sm" c="dimmed">
+                        {med.medicine_type}
+                      </Text>
+                      {med.description && (
+                        <Text size="sm" mt="xs">
+                          {med.description}
+                        </Text>
+                      )}
+                    </Stack>
+                    <Group gap="xs">
+                      <ActionIcon
+                        variant="subtle"
+                        color="blue"
+                        onClick={() => handleEditClick(med)}
+                        aria-label="Edit medication"
+                      >
+                        <Edit size={18} />
+                      </ActionIcon>
+                      <ActionIcon
+                        variant="subtle"
+                        color="red"
+                        onClick={() => handleDeleteClick(med)}
+                        aria-label="Delete medication"
+                      >
+                        <Trash2 size={18} />
+                      </ActionIcon>
+                    </Group>
+                  </Group>
+                </Card>
+              ))}
+            </Stack>
+          )}
+        </Stack>
+      </Modal>
 
       {/* Add Medication Modal */}
       <Modal
@@ -424,6 +662,56 @@ const Medicines: React.FC = () => {
             </Button>
           </Group>
         </Stack>
+      </Modal>
+
+      {/* Add Medication Entry Modal */}
+      <Modal
+        opened={entryModalOpen}
+        onClose={() => setEntryModalOpen(false)}
+        title="Log Medication Entry"
+        size="md"
+      >
+        <form onSubmit={handleEntrySubmit}>
+          <Stack>
+            <Text size="sm" c="dimmed">
+              Recording entry for:{" "}
+              <strong>
+                {medicines.find((m) => m.id === selectedMedicine)?.name}
+              </strong>
+            </Text>
+            <NumberInput
+              label="Quantity"
+              placeholder="1"
+              value={entryQuantity}
+              onChange={(value) => setEntryQuantity(Number(value))}
+              min={1}
+              required
+            />
+            <DatePicker
+              label="Date and Time"
+              placeholder="Pick date and time"
+              value={entryTimestamp}
+              onChange={(value) => setEntryTimestamp(value)}
+            />
+            {entryError && (
+              <Text c="red" size="sm">
+                {entryError}
+              </Text>
+            )}
+            <Group justify="flex-end" mt="md">
+              <Button
+                variant="subtle"
+                onClick={() => setEntryModalOpen(false)}
+                disabled={entrySubmitting}
+              >
+                Cancel
+              </Button>
+              <Button type="submit" loading={entrySubmitting}>
+                Log Entry
+              </Button>
+            </Group>
+          </Stack>
+        </form>
       </Modal>
     </Stack>
   );

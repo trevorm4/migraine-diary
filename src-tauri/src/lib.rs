@@ -1,10 +1,9 @@
 use tokio::runtime::Runtime;
 use tauri::Manager;
-use models::entry;
 use crate::handlers::entries::*;
 use crate::handlers::medicine::*;
 use crate::handlers::shared::AppState;
-use crate::models::medicine;
+use crate::models::{entry, medicine, medicine_entry};
 
 mod database;
 pub mod models;
@@ -22,6 +21,7 @@ pub fn run() {
                 match conn.get_schema_builder()
                     .register(entry::Entity)
                     .register(medicine::Entity)
+                    .register(medicine_entry::Entity)
                     .sync(&conn)
                     .await {
                     Ok(()) => Ok(conn),
@@ -34,7 +34,7 @@ pub fn run() {
             app.manage(AppState { db: db});
             Ok(())
         })
-        .invoke_handler(tauri::generate_handler![submit_entry, get_entries, edit_entry, delete_entry, get_medications, track_medication, edit_medication, delete_medication])
+        .invoke_handler(tauri::generate_handler![submit_entry, get_entries, edit_entry, delete_entry, add_medication_entry,get_medication_entries, get_medications, track_medication, edit_medication, delete_medication])
         .run(tauri::generate_context!())
         .expect("error while running tauri application");
 }

@@ -19,7 +19,9 @@ pub struct Model {
     pub id: i32,
     pub name: String,
     pub medicine_type: MedicineType,
-    pub description: String
+    pub description: String,
+    #[sea_orm(has_many)]
+    pub entries: HasMany<super::medicine_entry::Entity>
 }
 
 impl ActiveModelBehavior for ActiveModel {}
