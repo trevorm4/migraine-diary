@@ -9,7 +9,6 @@ import {
   Button,
   Loader,
   Group,
-  Divider,
   Modal,
   ActionIcon,
 } from "@mantine/core";
@@ -57,7 +56,6 @@ const Medicines: React.FC = () => {
 
   // Edit modal state
   const [editModalOpen, setEditModalOpen] = useState(false);
-  const [editingMedicine, setEditingMedicine] = useState<Medicine | null>(null);
   const [editFormState, setEditFormState] = useState<EditMedicationRequest>({
     id: 0,
     name: "",
@@ -129,7 +127,6 @@ const Medicines: React.FC = () => {
   };
 
   const handleEditClick = (medicine: Medicine) => {
-    setEditingMedicine(medicine);
     setEditFormState({
       id: medicine.id,
       name: medicine.name,
@@ -161,7 +158,6 @@ const Medicines: React.FC = () => {
     try {
       await invoke("edit_medication", { med: editFormState });
       setEditModalOpen(false);
-      setEditingMedicine(null);
       await fetchMedicines();
     } catch (err) {
       setEditError(

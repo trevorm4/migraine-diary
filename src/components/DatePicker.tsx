@@ -3,11 +3,11 @@ import { DateTimePicker, DatePicker as MantineDatePicker } from "@mantine/dates"
 interface DatePickerProps {
   label: string;
   placeholder: string;
-  value: [string | null, string | null] | string | null; // Allow both types
-  defaultValue: [string | null, string | null] | string | null; // Allow both types
+  value?: any; // Accept single or range values of any type
+  defaultValue?: any;
   onChange: (value: any) => void;
-  rangePicker?: boolean; // Changed from 'boolean | null' to optional boolean
-  excludeDate?: (date: Date) => boolean;
+  rangePicker?: boolean;
+  excludeDate?: (date: any) => boolean;
 }
 
 export default function DatePicker({
@@ -21,7 +21,7 @@ export default function DatePicker({
     return (
       <MantineDatePicker
         type="range"
-        value={value as [Date | null, Date | null]}
+        value={value}
         defaultValue={defaultValue}
         onChange={onChange}
         {...others}
@@ -39,4 +39,3 @@ export default function DatePicker({
     />
   );
 }
-

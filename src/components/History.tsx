@@ -21,7 +21,7 @@ import { Pencil, Trash2 } from "lucide-react";
 import DatePicker from "@/components/DatePicker";
 import { invoke } from "@tauri-apps/api/core";
 import { HeadacheLocation } from "@/lib/types";
-import { chunk } from "@/lib/utils";
+import { chunk, getEnumKeys } from "@/lib/utils";
 import { HEADACHE_COLORS } from "@/lib/constants";
 
 interface Entry {
@@ -141,17 +141,19 @@ interface EditModalProps {
 
 function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
   const [description, setDescription] = useState("");
-  const [startDate, setStartDate] = useState<Date | null>(null);
-  const [endDate, setEndDate] = useState<Date | null>(null);
+  const [startDate, setStartDate] = useState<string | null>(null);
+  const [endDate, setEndDate] = useState<string | null>(null);
   const [severity, setSeverity] = useState<number>(5);
-  const [headacheLocation, setHeadacheLocation] = useState<HeadacheLocation>("Front");
+  const [headacheLocation, setHeadacheLocation] = useState<HeadacheLocation>(
+    HeadacheLocation.Front
+  );
   const [saving, setSaving] = useState(false);
 
   useEffect(() => {
     if (entry) {
       setDescription(entry.description);
-      setStartDate(new Date(entry.start_dt));
-      setEndDate(new Date(entry.end_dt));
+      setStartDate(entry.start_dt);
+      setEndDate(entry.end_dt);
       setSeverity(entry.severity);
       setHeadacheLocation(entry.headache_location);
     }
@@ -165,8 +167,8 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
       await onSave({
         id: entry.id,
         description,
-        start_date: startDate.toISOString(),
-        end_date: endDate.toISOString(),
+        start_date: new Date(startDate).toISOString(),
+        end_date: new Date(endDate).toISOString(),
         severity,
         headache_location: headacheLocation,
       });
@@ -185,14 +187,10 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
           label="Headache Location"
           value={headacheLocation}
           onChange={(value) => setHeadacheLocation(value as HeadacheLocation)}
-          data={[
-            { value: "Front", label: "Front" },
-            { value: "Back", label: "Back" },
-            { value: "Left", label: "Left" },
-            { value: "Right", label: "Right" },
-            { value: "Top", label: "Top" },
-            { value: "Whole", label: "Whole" },
-          ]}
+          data={getEnumKeys(HeadacheLocation).map((key) => ({
+            value: HeadacheLocation[key],
+            label: key,
+          }))}
         />
 
         <NumberInput
@@ -206,13 +204,13 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
         <DateTimePicker
           label="Start Date & Time"
           value={startDate}
-          onChange={setStartDate}
+          onChange={(value) => setStartDate(value)}
         />
 
         <DateTimePicker
           label="End Date & Time"
           value={endDate}
-          onChange={setEndDate}
+          onChange={(value) => setEndDate(value)}
         />
 
         <Textarea
@@ -384,7 +382,7 @@ const History: React.FC = () => {
       const result = await invoke("get_entries", {
         request: requestData,
       });
-      setEntries(result);
+      setEntries(result as Entry[]);
     } catch (err) {
       setError(err instanceof Error ? err.message : "Failed to fetch entries");
       console.error("Error fetching entries:", err);
