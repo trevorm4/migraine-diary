@@ -5,14 +5,14 @@ import React from "react";
 import ReactDOM from "react-dom/client";
 import Layout from "./Layout";
 import { BrowserRouter } from "react-router-dom";
-import { MantineProvider, createTheme, Text, TextInput, Input} from "@mantine/core";
+import { MantineProvider, createTheme, CSSVariablesResolver } from "@mantine/core";
 
 const theme = createTheme({
   primaryColor: "dark",
   defaultRadius: 12,
   });
 
-const resolver: CSSVariablesResolver = (theme) => ({
+const resolver: CSSVariablesResolver = () => ({
   /** Shared CSS variables that should be accessible independent from color scheme */
   variables: {},
   /** CSS variables available only in dark color scheme */

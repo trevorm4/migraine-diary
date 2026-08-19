@@ -10,6 +10,7 @@ import {
   Group,
   Flex,
   Modal,
+  NumberInput,
 } from "@mantine/core";
 import DatePicker from "@/components/DatePicker";
 import { useNavigate } from "react-router-dom";
@@ -19,8 +20,8 @@ import { HeadacheLocation } from "@/lib/types";
 import { invoke } from "@tauri-apps/api/core";
 
 interface EntryData {
-  start_date: string;
-  end_date: string;
+  start_date: Date;
+  duration_hours: number;
   description: string;
   severity: number;
   headache_location: HeadacheLocation;
@@ -44,7 +45,7 @@ const SubmitEntry: React.FC = () => {
     severity: 5,
     headache_location: HeadacheLocation.Temple,
     start_date: new Date(),
-    end_date: new Date(),
+    duration_hours: 4,
     description: "",
   });
 
@@ -53,16 +54,21 @@ const SubmitEntry: React.FC = () => {
       severity: 5,
       headache_location: HeadacheLocation.Temple,
       start_date: new Date(),
-      end_date: new Date(),
+      duration_hours: 4,
       description: "",
     });
   };
 
   const handleSubmit = async () => {
+    const startDate = new Date(formData.start_date);
+    const endDate = new Date(
+      startDate.getTime() + formData.duration_hours * 60 * 60 * 1000
+    );
+
     const requestData = {
       ...formData,
-      start_date: new Date(formData.start_date).toISOString(),
-      end_date: new Date(formData.end_date).toISOString(),
+      start_date: startDate.toISOString(),
+      end_date: endDate.toISOString(),
     };
 
     await invoke("submit_entry", { request: requestData });
@@ -91,12 +97,17 @@ const SubmitEntry: React.FC = () => {
         onChange={(value) => setFormData({ ...formData, start_date: value })}
         excludeDate={excludeDate}
       />
-      <DatePicker
-        label="End Date"
-        placeholder="Pick date and time"
-        value={formData.end_date}
-        excludeDate={excludeDate}
-        onChange={(value) => setFormData({ ...formData, end_date: value })}
+      <NumberInput
+        label="Duration (hours)"
+        description="How long did the migraine last?"
+        value={formData.duration_hours}
+        onChange={(value) =>
+          setFormData({ ...formData, duration_hours: Number(value) })
+        }
+        min={0.5}
+        step={0.5}
+        allowDecimal
+        allowNegative={false}
       />
 
       <TextInput
@@ -133,7 +144,6 @@ const SubmitEntry: React.FC = () => {
         }
         data={getEnumKeys(HeadacheLocation).map((key) => {
           const headacheValue = HeadacheLocation[key];
-          const color = HEADACHE_COLORS[headacheValue];
 
           return {
             value: headacheValue,
@@ -141,7 +151,7 @@ const SubmitEntry: React.FC = () => {
           };
         })}
         renderOption={({ option }) => {
-          const color = HEADACHE_COLORS[option.value];
+          const color = HEADACHE_COLORS[option.value as HeadacheLocation];
           return (
             <Flex align="center" gap="sm">
               <Box

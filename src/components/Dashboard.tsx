@@ -260,7 +260,7 @@ const Dashboard: React.FC = () => {
         const result = await invoke("get_entries", {
           request: requestData,
         });
-        setEntries(result);
+        setEntries(result as Entry[]);
       } catch (err) {
         setError(err instanceof Error ? err.message : "Failed to fetch entries");
         console.error("Error fetching entries:", err);

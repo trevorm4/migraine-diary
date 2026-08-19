@@ -1,7 +1,7 @@
 import React from 'react';
 import { NavLink } from 'react-router-dom';
 import { Stack, Box, Text, Divider, Group, UnstyledButton } from '@mantine/core';
-import { Activity, PlusCircle, Calendar, BarChart3, Settings, Pill } from 'lucide-react';
+import { Activity, PlusCircle, Calendar, Pill } from 'lucide-react';
 
 const Sidebar: React.FC = () => {
   const navItems = [

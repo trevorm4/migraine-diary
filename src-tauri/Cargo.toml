@@ -18,7 +18,7 @@ crate-type = ["staticlib", "cdylib", "rlib"]
 tauri-build = { version = "2", features = [] }
 
 [dependencies]
-tauri = { version = "2", features = [] }
+tauri = { version = "2.11", features = [] }
 tauri-plugin-opener = "2"
 sea-orm = { version = "2.0.0-rc", features = [ "sqlx-sqlite", "runtime-tokio-rustls", "macros", "with-chrono", "with-uuid", "schema-sync", "entity-registry" ] }
 serde = { version = "1", features = ["derive"] }
