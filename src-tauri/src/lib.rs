@@ -5,6 +5,7 @@ use crate::handlers::entries::*;
 use crate::handlers::medicine::*;
 use crate::handlers::shared::AppState;
 use crate::models::medicine;
+use crate::models::entry_medicine;
 
 mod database;
 pub mod models;
@@ -22,6 +23,7 @@ pub fn run() {
                 match conn.get_schema_builder()
                     .register(entry::Entity)
                     .register(medicine::Entity)
+                    .register(entry_medicine::Entity)
                     .sync(&conn)
                     .await {
                     Ok(()) => Ok(conn),

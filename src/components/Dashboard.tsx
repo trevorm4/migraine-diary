@@ -12,7 +12,7 @@ import {
 import { LineChart } from "@mantine/charts";
 import DatePicker from "@/components/DatePicker";
 import { invoke } from "@tauri-apps/api/core";
-import { HeadacheLocation } from "@/lib/types";
+import { HeadacheLocation, MedicineUse } from "@/lib/types";
 import { HEADACHE_COLORS } from "@/lib/constants";
 
 interface Entry {
@@ -22,6 +22,7 @@ interface Entry {
   description: string;
   severity: number;
   headache_location: HeadacheLocation;
+  medications: MedicineUse[];
 }
 
 interface HeadacheStats {
@@ -39,6 +40,21 @@ const formatDuration = (minutes: number) => {
     return `${hours}h ${mins}m`;
   }
   return `${mins}m`;
+};
+
+const calculateMedicationStats = (entries: Entry[]) => {
+  const byMed: Record<number, { name: string; uses: number }> = {};
+
+  entries.forEach((entry) => {
+    entry.medications.forEach((med) => {
+      if (!byMed[med.medicine_id]) {
+        byMed[med.medicine_id] = { name: med.name, uses: 0 };
+      }
+      byMed[med.medicine_id].uses += 1;
+    });
+  });
+
+  return Object.values(byMed).sort((a, b) => b.uses - a.uses);
 };
 
 const calculateOverallStats = (entries: Entry[]) => {
@@ -275,6 +291,8 @@ const Dashboard: React.FC = () => {
   const stats = entries.length > 0 ? calculateStatsByType(entries) : [];
   const chartData = entries.length > 0 ? prepareChartData(entries) : [];
   const overallStats = entries.length > 0 ? calculateOverallStats(entries) : null;
+  const medicationStats =
+    entries.length > 0 ? calculateMedicationStats(entries) : [];
 
   return (
     <Stack>
@@ -329,6 +347,30 @@ const Dashboard: React.FC = () => {
               ))}
             </Grid>
           </div>
+
+          {/* Medication Use */}
+          {medicationStats.length > 0 && (
+            <div>
+              <Text size="lg" fw={600} mb="md">
+                Medication Use
+              </Text>
+              <Card shadow="sm" padding="lg" radius="md" withBorder>
+                <Stack gap="xs">
+                  {medicationStats.map((med) => (
+                    <Group key={med.name} justify="space-between">
+                      <Text size="sm" fw={500}>
+                        {med.name}
+                      </Text>
+                      <Text size="sm" c="dimmed">
+                        used in {med.uses}{" "}
+                        {med.uses === 1 ? "migraine" : "migraines"}
+                      </Text>
+                    </Group>
+                  ))}
+                </Stack>
+              </Card>
+            </div>
+          )}
 
           {/* Severity Over Time Chart */}
           <div>
