@@ -4,8 +4,10 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::models::entry;
 use crate::models::entry::HeadacheLocation;
+use crate::models::{entry_medicine, entry_location, medicine};
 use crate::handlers::shared::AppState;
 use chrono::{DateTime, Utc};
+use std::collections::HashMap;
 use std::option::Option;
 
 
@@ -15,13 +17,29 @@ pub struct GetEntriesRequest {
     end_date: DateTime<Utc>,
 }
 
+/// A single medication taken during a migraine window (as submitted/edited).
+#[derive(Serialize, Deserialize, Debug, Clone)]
+pub struct MedicineDose {
+    medicine_id: i32,
+    dose: Option<String>,
+}
+
+/// A medication associated with an entry, including its display name.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct MedicineUse {
+    pub medicine_id: i32,
+    pub name: String,
+    pub dose: Option<String>,
+}
+
 #[derive(Serialize, Deserialize, Debug)]
 pub struct SubmitEntryRequest {
     description: String,
     start_date: DateTime<Utc>,
     end_date: DateTime<Utc>,
     severity: i8,
-    headache_location: HeadacheLocation,
+    headache_locations: Vec<HeadacheLocation>,
+    medications: Vec<MedicineDose>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -31,7 +49,8 @@ pub struct EditEntryRequest {
     start_date: DateTime<Utc>,
     end_date: DateTime<Utc>,
     severity: i8,
-    headache_location: HeadacheLocation,
+    headache_locations: Vec<HeadacheLocation>,
+    medications: Vec<MedicineDose>,
 }
 
 #[derive(Serialize, Deserialize, Debug)]
@@ -39,7 +58,70 @@ pub struct DeleteEntryRequest {
     id: i32
 }
 
+/// An entry with the medications taken during its window.
+#[derive(Serialize, Deserialize, Debug)]
+pub struct EntryWithMeds {
+    pub id: i32,
+    pub start_dt: DateTime<Utc>,
+    pub end_dt: DateTime<Utc>,
+    pub headache_locations: Vec<HeadacheLocation>,
+    pub severity: i8,
+    pub description: String,
+    pub medications: Vec<MedicineUse>,
+}
 
+
+async fn replace_medications(
+    db: &DatabaseConnection,
+    entry_id: i32,
+    medications: Vec<MedicineDose>,
+) -> Result<(), sea_orm::DbErr> {
+    // Remove existing associations for this entry, then insert the new set.
+    entry_medicine::Entity::delete_many()
+        .filter(entry_medicine::Column::EntryId.eq(entry_id))
+        .exec(db)
+        .await?;
+
+    let rows: Vec<entry_medicine::ActiveModel> = medications
+        .into_iter()
+        .map(|m| entry_medicine::ActiveModel {
+            entry_id: Set(entry_id),
+            medicine_id: Set(m.medicine_id),
+            dose: Set(m.dose),
+            ..Default::default()
+        })
+        .collect();
+
+    if !rows.is_empty() {
+        entry_medicine::Entity::insert_many(rows).exec(db).await?;
+    }
+    Ok(())
+}
+
+async fn replace_locations(
+    db: &DatabaseConnection,
+    entry_id: i32,
+    locations: Vec<HeadacheLocation>,
+) -> Result<(), sea_orm::DbErr> {
+    entry_location::Entity::delete_many()
+        .filter(entry_location::Column::EntryId.eq(entry_id))
+        .exec(db)
+        .await?;
+
+    let rows: Vec<entry_location::ActiveModel> = locations
+        .into_iter()
+        .map(|loc| entry_location::ActiveModel {
+            entry_id: Set(entry_id),
+            location: Set(loc),
+            ..Default::default()
+        })
+        .collect();
+
+    if !rows.is_empty() {
+        entry_location::Entity::insert_many(rows).exec(db).await?;
+    }
+    Ok(())
+}
 
 
 #[tauri::command]
@@ -48,15 +130,16 @@ pub async fn submit_entry(state: State<'_, AppState>, request: SubmitEntryReques
     let entry = entry::ActiveModel{
         description: Set(request.description),
         severity: Set(request.severity),
-        headache_location: Set(request.headache_location),
         start_dt: Set(request.start_date),
         end_dt: Set(request.end_date),
         ..Default::default()
     };
-    match entry::Entity::insert(entry).exec(db).await {
-        Ok(_) => Ok(()),
-        Err(err) => Err(err.to_string())
-    }
+    let result = entry::Entity::insert(entry).exec(db).await.map_err(|e| e.to_string())?;
+    let entry_id = result.last_insert_id;
+
+    replace_medications(db, entry_id, request.medications).await.map_err(|e| e.to_string())?;
+    replace_locations(db, entry_id, request.headache_locations).await.map_err(|e| e.to_string())?;
+    Ok(())
 }
 
 #[tauri::command]
@@ -78,11 +161,14 @@ pub async fn edit_entry(state: State<'_, AppState>, request: EditEntryRequest) -
     let mut am: entry::ActiveModel = entry.into();
     am.start_dt = Set(request.start_date);
     am.end_dt = Set(request.end_date);
-    am.headache_location = Set(request.headache_location);
     am.severity = Set(request.severity);
     am.description = Set(request.description);
     match am.update(db).await {
-        Ok(m) => Ok(m),
+        Ok(m) => {
+            replace_medications(db, m.id, request.medications).await.map_err(|e| e.to_string())?;
+            replace_locations(db, m.id, request.headache_locations).await.map_err(|e| e.to_string())?;
+            Ok(m)
+        },
         Err(e) => Err(e.to_string())
     }
 }
@@ -103,15 +189,27 @@ pub async fn delete_entry(state: State<'_, AppState>, request: DeleteEntryReques
         Err(e) => return Err(e.to_string())
     };
     match entry.delete(db).await {
-        Ok(_) => Ok(()),
+        Ok(_) => {
+            entry_medicine::Entity::delete_many()
+                .filter(entry_medicine::Column::EntryId.eq(request.id))
+                .exec(db)
+                .await
+                .map_err(|e| e.to_string())?;
+            entry_location::Entity::delete_many()
+                .filter(entry_location::Column::EntryId.eq(request.id))
+                .exec(db)
+                .await
+                .map_err(|e| e.to_string())?;
+            Ok(())
+        },
         Err(e) => Err(e.to_string())
     }
 }
 
 #[tauri::command]
-pub async fn get_entries(state: State<'_, AppState>, request: GetEntriesRequest) -> Result<Vec<entry::Model>, String>{
+pub async fn get_entries(state: State<'_, AppState>, request: GetEntriesRequest) -> Result<Vec<EntryWithMeds>, String>{
     let db: &DatabaseConnection = &state.db;
-    let entries: Result<Vec<entry::Model>, sea_orm::DbErr> = entry::Entity::find()
+    let entries: Vec<entry::Model> = entry::Entity::find()
         .filter(
             Condition::all()
             .add(entry::Column::StartDt.gte(request.start_date))
@@ -119,9 +217,83 @@ pub async fn get_entries(state: State<'_, AppState>, request: GetEntriesRequest)
         )
         .order_by_desc(entry::Column::EndDt)
         .all(db)
-        .await;
-    match entries {
-        Ok(v) => Ok(v),
-        Err(err) => Err(err.to_string())
+        .await
+        .map_err(|e| e.to_string())?;
+
+    let ids: Vec<i32> = entries.iter().map(|e| e.id).collect();
+
+    let use_rows: Vec<entry_medicine::Model> = if ids.is_empty() {
+        vec![]
+    } else {
+        entry_medicine::Entity::find()
+            .filter(entry_medicine::Column::EntryId.is_in(ids.clone()))
+            .all(db)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    let med_ids: Vec<i32> = use_rows.iter().map(|u| u.medicine_id).collect();
+    let name_by_id: HashMap<i32, String> = if med_ids.is_empty() {
+        HashMap::new()
+    } else {
+        medicine::Entity::find()
+            .filter(medicine::Column::Id.is_in(med_ids.clone()))
+            .all(db)
+            .await
+            .map_err(|e| e.to_string())?
+            .into_iter()
+            .map(|m| (m.id, m.name))
+            .collect()
+    };
+
+    let mut by_entry: HashMap<i32, Vec<MedicineUse>> = HashMap::new();
+    for use_row in use_rows {
+        by_entry
+            .entry(use_row.entry_id)
+            .or_default()
+            .push(MedicineUse {
+                medicine_id: use_row.medicine_id,
+                name: name_by_id
+                    .get(&use_row.medicine_id)
+                    .cloned()
+                    .unwrap_or_default(),
+                dose: use_row.dose,
+            });
     }
+
+    let loc_rows: Vec<entry_location::Model> = if ids.is_empty() {
+        vec![]
+    } else {
+        entry_location::Entity::find()
+            .filter(entry_location::Column::EntryId.is_in(ids.clone()))
+            .order_by_asc(entry_location::Column::Id)
+            .all(db)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    let mut locs_by_entry: HashMap<i32, Vec<HeadacheLocation>> = HashMap::new();
+    for row in loc_rows {
+        locs_by_entry
+            .entry(row.entry_id)
+            .or_default()
+            .push(row.location);
+    }
+
+    Ok(entries
+        .into_iter()
+        .map(|e| {
+            let headaches = locs_by_entry.remove(&e.id);
+            EntryWithMeds {
+                id: e.id,
+                start_dt: e.start_dt,
+                end_dt: e.end_dt,
+                // Prefer the per-entry list; fall back to the legacy single column.
+                headache_locations: headaches.unwrap_or_default(),
+                severity: e.severity,
+                description: e.description,
+                medications: by_entry.remove(&e.id).unwrap_or_default(),
+            }
+        })
+        .collect())
 }

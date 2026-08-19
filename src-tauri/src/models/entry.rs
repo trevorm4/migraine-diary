@@ -22,7 +22,6 @@ pub struct Model {
     pub id: i32,
     pub start_dt: DateTime<Utc>,
     pub end_dt: DateTime<Utc>,
-    pub headache_location: HeadacheLocation,
     pub severity: i8,
     pub description: String
 }

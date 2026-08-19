@@ -12,15 +12,18 @@ import {
   Modal,
   Button,
   Textarea,
-  Select,
+  MultiSelect,
   NumberInput,
   ActionIcon,
+  Checkbox,
+  TextInput,
+  Divider,
 } from "@mantine/core";
 import { DateTimePicker } from "@mantine/dates";
 import { Pencil, Trash2 } from "lucide-react";
 import DatePicker from "@/components/DatePicker";
 import { invoke } from "@tauri-apps/api/core";
-import { HeadacheLocation } from "@/lib/types";
+import { HeadacheLocation, Medicine, MedicineDose, MedicineUse } from "@/lib/types";
 import { chunk, getEnumKeys } from "@/lib/utils";
 import { HEADACHE_COLORS } from "@/lib/constants";
 
@@ -30,7 +33,8 @@ interface Entry {
   end_dt: string;
   description: string;
   severity: number;
-  headache_location: HeadacheLocation;
+  headache_locations: HeadacheLocation[];
+  medications: MedicineUse[];
 }
 
 interface EditEntryRequest {
@@ -39,7 +43,8 @@ interface EditEntryRequest {
   start_date: string;
   end_date: string;
   severity: number;
-  headache_location: HeadacheLocation;
+  headache_locations: HeadacheLocation[];
+  medications: MedicineDose[];
 }
 
 
@@ -106,11 +111,14 @@ function DeleteModal({ opened, onClose, entry, onDelete }: DeleteModalProps) {
                     width: "12px",
                     height: "12px",
                     borderRadius: "50%",
-                    backgroundColor: HEADACHE_COLORS[entry.headache_location],
+                    backgroundColor:
+                      HEADACHE_COLORS[entry.headache_locations[0]],
                     flexShrink: 0,
                   }}
                 />
-                <Text size="sm" fw={600}>{entry.headache_location}</Text>
+                <Text size="sm" fw={600}>
+                  {entry.headache_locations.join(", ")}
+                </Text>
               </Group>
               <Text size="xs" c="dimmed">
                 {formatDate(entry.start_dt)} - {formatDate(entry.end_dt)}
@@ -144,10 +152,24 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
   const [severity, setSeverity] = useState<number>(5);
-  const [headacheLocation, setHeadacheLocation] = useState<HeadacheLocation>(
-    HeadacheLocation.Front
+  const [headacheLocations, setHeadacheLocations] = useState<HeadacheLocation[]>(
+    [HeadacheLocation.Front]
   );
+  const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [selectedMeds, setSelectedMeds] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const loadMedicines = async () => {
+      try {
+        const result = await invoke<Medicine[]>("get_medications");
+        setMedicines(result);
+      } catch (err) {
+        console.error("Failed to fetch medications:", err);
+      }
+    };
+    loadMedicines();
+  }, []);
 
   useEffect(() => {
     if (entry) {
@@ -155,12 +177,40 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
       setStartDate(entry.start_dt);
       setEndDate(entry.end_dt);
       setSeverity(entry.severity);
-      setHeadacheLocation(entry.headache_location);
+      setHeadacheLocations(entry.headache_locations);
+      setSelectedMeds(
+        Object.fromEntries(
+          entry.medications.map((m) => [m.medicine_id, m.dose ?? ""])
+        )
+      );
     }
   }, [entry]);
 
+  const toggleMedicine = (medId: number, checked: boolean) => {
+    setSelectedMeds((prev) => {
+      const next = { ...prev };
+      if (checked) {
+        next[medId] = next[medId] ?? "";
+      } else {
+        delete next[medId];
+      }
+      return next;
+    });
+  };
+
+  const setDose = (medId: number, dose: string) => {
+    setSelectedMeds((prev) => ({ ...prev, [medId]: dose }));
+  };
+
   const handleSave = async () => {
     if (!entry || !startDate || !endDate) return;
+
+    const medications: MedicineDose[] = Object.entries(selectedMeds).map(
+      ([medId, dose]) => ({
+        medicine_id: Number(medId),
+        dose: dose.trim() === "" ? null : dose.trim(),
+      })
+    );
 
     setSaving(true);
     try {
@@ -170,7 +220,8 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
         start_date: new Date(startDate).toISOString(),
         end_date: new Date(endDate).toISOString(),
         severity,
-        headache_location: headacheLocation,
+        headache_locations: headacheLocations,
+        medications,
       });
       onClose();
     } catch (error) {
@@ -183,10 +234,11 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
   return (
     <Modal opened={opened} onClose={onClose} title="Edit Entry" size="md">
       <Stack gap="md">
-        <Select
-          label="Headache Location"
-          value={headacheLocation}
-          onChange={(value) => setHeadacheLocation(value as HeadacheLocation)}
+        <MultiSelect
+          label="Headache Sections"
+          placeholder="Select one or more sections..."
+          value={headacheLocations}
+          onChange={(value) => setHeadacheLocations(value as HeadacheLocation[])}
           data={getEnumKeys(HeadacheLocation).map((key) => ({
             value: HeadacheLocation[key],
             label: key,
@@ -220,6 +272,38 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
           minRows={3}
         />
 
+        <Divider />
+
+        <Text size="sm" fw={500}>
+          Medications Taken
+        </Text>
+        {medicines.length === 0 && (
+          <Text size="sm" c="dimmed">
+            No medications tracked. Add them in the Medicines view first.
+          </Text>
+        )}
+        {medicines.map((med) => {
+          const checked = selectedMeds[med.id] !== undefined;
+          return (
+            <Group key={med.id} align="center" gap="sm">
+              <Checkbox
+                label={med.name}
+                checked={checked}
+                onChange={(e) => toggleMedicine(med.id, e.currentTarget.checked)}
+                styles={{ label: { fontWeight: 500 } }}
+              />
+              {checked && (
+                <TextInput
+                  placeholder="Dose (e.g. 50mg)"
+                  value={selectedMeds[med.id]}
+                  onChange={(e) => setDose(med.id, e.currentTarget.value)}
+                  style={{ flex: 1 }}
+                />
+              )}
+            </Group>
+          );
+        })}
+
         <Group justify="flex-end" mt="md">
           <Button variant="subtle" onClick={onClose} disabled={saving}>
             Cancel
@@ -252,7 +336,7 @@ function EntriesTable({
   return (
     <Stack mt="md" gap="md">
       {currentEntries.map((entry) => {
-        const color = HEADACHE_COLORS[entry.headache_location];
+        const color = HEADACHE_COLORS[entry.headache_locations[0]];
         return (
           <Card key={entry.id} shadow="sm" padding="lg" radius="md" withBorder>
             <Stack gap="xs">
@@ -267,7 +351,7 @@ function EntriesTable({
                       flexShrink: 0,
                     }}
                   />
-                  <Text fw={600}>{entry.headache_location}</Text>
+                  <Text fw={600}>{entry.headache_locations.join(", ")}</Text>
                 </Group>
                 <Group gap="xs">
                   <Text size="sm" c="dimmed">
@@ -320,6 +404,20 @@ function EntriesTable({
                   </Text>
                   <Text size="sm">{entry.description}</Text>
                 </>
+              )}
+
+              {entry.medications.length > 0 && (
+                <Stack gap={4} mt="xs">
+                  <Text size="sm" c="dimmed">
+                    Medications taken:
+                  </Text>
+                  {entry.medications.map((med, idx) => (
+                    <Text key={`${med.medicine_id}-${idx}`} size="sm">
+                      {med.name}
+                      {med.dose ? ` (${med.dose})` : ""}
+                    </Text>
+                  ))}
+                </Stack>
               )}
             </Stack>
           </Card>
