@@ -95,6 +95,9 @@
           cargoLock.lockFile = ./src-tauri/Cargo.lock;
           cargoRoot = "src-tauri";
           buildAndTestSubdir = "src-tauri";
+          # Enable the embedded-asset protocol so the packaged app serves its
+          # frontend from the binary instead of the devUrl (dev = !custom_protocol).
+          buildFeatures = [ "custom-protocol" ];
           # tauri.conf.json embeds ../dist (repo root) at Rust build time, so
           # build the frontend first, inside the source tree.
           preConfigure = ''

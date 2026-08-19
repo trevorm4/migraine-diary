@@ -28,3 +28,8 @@ chrono = "0.4.42"
 log = "0.4.29"
 env_logger = "0.11.8"
 
+[features]
+# Enables the custom asset-serving protocol for packaged (release) builds.
+# `tauri build` enables this; `tauri dev` leaves it off so HMR can reach the devUrl.
+custom-protocol = ["tauri/custom-protocol"]
+
