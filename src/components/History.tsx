@@ -15,12 +15,15 @@ import {
   Select,
   NumberInput,
   ActionIcon,
+  Checkbox,
+  TextInput,
+  Divider,
 } from "@mantine/core";
 import { DateTimePicker } from "@mantine/dates";
 import { Pencil, Trash2 } from "lucide-react";
 import DatePicker from "@/components/DatePicker";
 import { invoke } from "@tauri-apps/api/core";
-import { HeadacheLocation } from "@/lib/types";
+import { HeadacheLocation, Medicine, MedicineDose, MedicineUse } from "@/lib/types";
 import { chunk, getEnumKeys } from "@/lib/utils";
 import { HEADACHE_COLORS } from "@/lib/constants";
 
@@ -31,6 +34,7 @@ interface Entry {
   description: string;
   severity: number;
   headache_location: HeadacheLocation;
+  medications: MedicineUse[];
 }
 
 interface EditEntryRequest {
@@ -40,6 +44,7 @@ interface EditEntryRequest {
   end_date: string;
   severity: number;
   headache_location: HeadacheLocation;
+  medications: MedicineDose[];
 }
 
 
@@ -147,7 +152,21 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
   const [headacheLocation, setHeadacheLocation] = useState<HeadacheLocation>(
     HeadacheLocation.Front
   );
+  const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [selectedMeds, setSelectedMeds] = useState<Record<number, string>>({});
   const [saving, setSaving] = useState(false);
+
+  useEffect(() => {
+    const loadMedicines = async () => {
+      try {
+        const result = await invoke<Medicine[]>("get_medications");
+        setMedicines(result);
+      } catch (err) {
+        console.error("Failed to fetch medications:", err);
+      }
+    };
+    loadMedicines();
+  }, []);
 
   useEffect(() => {
     if (entry) {
@@ -156,11 +175,39 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
       setEndDate(entry.end_dt);
       setSeverity(entry.severity);
       setHeadacheLocation(entry.headache_location);
+      setSelectedMeds(
+        Object.fromEntries(
+          entry.medications.map((m) => [m.medicine_id, m.dose ?? ""])
+        )
+      );
     }
   }, [entry]);
 
+  const toggleMedicine = (medId: number, checked: boolean) => {
+    setSelectedMeds((prev) => {
+      const next = { ...prev };
+      if (checked) {
+        next[medId] = next[medId] ?? "";
+      } else {
+        delete next[medId];
+      }
+      return next;
+    });
+  };
+
+  const setDose = (medId: number, dose: string) => {
+    setSelectedMeds((prev) => ({ ...prev, [medId]: dose }));
+  };
+
   const handleSave = async () => {
     if (!entry || !startDate || !endDate) return;
+
+    const medications: MedicineDose[] = Object.entries(selectedMeds).map(
+      ([medId, dose]) => ({
+        medicine_id: Number(medId),
+        dose: dose.trim() === "" ? null : dose.trim(),
+      })
+    );
 
     setSaving(true);
     try {
@@ -171,6 +218,7 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
         end_date: new Date(endDate).toISOString(),
         severity,
         headache_location: headacheLocation,
+        medications,
       });
       onClose();
     } catch (error) {
@@ -219,6 +267,38 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
           onChange={(e) => setDescription(e.target.value)}
           minRows={3}
         />
+
+        <Divider />
+
+        <Text size="sm" fw={500}>
+          Medications Taken
+        </Text>
+        {medicines.length === 0 && (
+          <Text size="sm" c="dimmed">
+            No medications tracked. Add them in the Medicines view first.
+          </Text>
+        )}
+        {medicines.map((med) => {
+          const checked = selectedMeds[med.id] !== undefined;
+          return (
+            <Group key={med.id} align="center" gap="sm">
+              <Checkbox
+                label={med.name}
+                checked={checked}
+                onChange={(e) => toggleMedicine(med.id, e.currentTarget.checked)}
+                styles={{ label: { fontWeight: 500 } }}
+              />
+              {checked && (
+                <TextInput
+                  placeholder="Dose (e.g. 50mg)"
+                  value={selectedMeds[med.id]}
+                  onChange={(e) => setDose(med.id, e.currentTarget.value)}
+                  style={{ flex: 1 }}
+                />
+              )}
+            </Group>
+          );
+        })}
 
         <Group justify="flex-end" mt="md">
           <Button variant="subtle" onClick={onClose} disabled={saving}>
@@ -320,6 +400,20 @@ function EntriesTable({
                   </Text>
                   <Text size="sm">{entry.description}</Text>
                 </>
+              )}
+
+              {entry.medications.length > 0 && (
+                <Stack gap={4} mt="xs">
+                  <Text size="sm" c="dimmed">
+                    Medications taken:
+                  </Text>
+                  {entry.medications.map((med, idx) => (
+                    <Text key={`${med.medicine_id}-${idx}`} size="sm">
+                      {med.name}
+                      {med.dose ? ` (${med.dose})` : ""}
+                    </Text>
+                  ))}
+                </Stack>
               )}
             </Stack>
           </Card>

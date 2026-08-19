@@ -1,4 +1,4 @@
-import React, { useState } from "react";
+import React, { useState, useEffect } from "react";
 import {
   Select,
   TextInput,
@@ -11,12 +11,15 @@ import {
   Flex,
   Modal,
   NumberInput,
+  Checkbox,
+  Loader,
+  Divider,
 } from "@mantine/core";
 import DatePicker from "@/components/DatePicker";
 import { useNavigate } from "react-router-dom";
 import { getEnumKeys } from "@/lib/utils";
 import { HEADACHE_COLORS } from "@/lib/constants";
-import { HeadacheLocation } from "@/lib/types";
+import { HeadacheLocation, Medicine, MedicineDose } from "@/lib/types";
 import { invoke } from "@tauri-apps/api/core";
 
 interface EntryData {
@@ -48,6 +51,24 @@ const SubmitEntry: React.FC = () => {
     duration_hours: 4,
     description: "",
   });
+  const [medicines, setMedicines] = useState<Medicine[]>([]);
+  const [medicinesLoading, setMedicinesLoading] = useState(true);
+  const [selectedMeds, setSelectedMeds] = useState<Record<number, string>>({});
+
+  const fetchMedicines = async () => {
+    try {
+      const result = await invoke<Medicine[]>("get_medications");
+      setMedicines(result);
+    } catch (err) {
+      console.error("Failed to fetch medications:", err);
+    } finally {
+      setMedicinesLoading(false);
+    }
+  };
+
+  useEffect(() => {
+    fetchMedicines();
+  }, []);
 
   const resetForm = () => {
     setFormData({
@@ -57,6 +78,23 @@ const SubmitEntry: React.FC = () => {
       duration_hours: 4,
       description: "",
     });
+    setSelectedMeds({});
+  };
+
+  const toggleMedicine = (medId: number, checked: boolean) => {
+    setSelectedMeds((prev) => {
+      const next = { ...prev };
+      if (checked) {
+        next[medId] = next[medId] ?? "";
+      } else {
+        delete next[medId];
+      }
+      return next;
+    });
+  };
+
+  const setDose = (medId: number, dose: string) => {
+    setSelectedMeds((prev) => ({ ...prev, [medId]: dose }));
   };
 
   const handleSubmit = async () => {
@@ -65,10 +103,18 @@ const SubmitEntry: React.FC = () => {
       startDate.getTime() + formData.duration_hours * 60 * 60 * 1000
     );
 
+    const medications: MedicineDose[] = Object.entries(selectedMeds).map(
+      ([medId, dose]) => ({
+        medicine_id: Number(medId),
+        dose: dose.trim() === "" ? null : dose.trim(),
+      })
+    );
+
     const requestData = {
       ...formData,
       start_date: startDate.toISOString(),
       end_date: endDate.toISOString(),
+      medications,
     };
 
     await invoke("submit_entry", { request: requestData });
@@ -168,6 +214,50 @@ const SubmitEntry: React.FC = () => {
           );
         }}
       />
+
+      <Divider my="xs" />
+
+      <Stack gap="xs">
+        <Text size="sm" fw={500}>
+          Medications Taken
+        </Text>
+        {medicinesLoading && (
+          <Group gap="xs">
+            <Loader size="sm" />
+            <Text size="sm" c="dimmed">
+              Loading medications...
+            </Text>
+          </Group>
+        )}
+        {!medicinesLoading && medicines.length === 0 && (
+          <Text size="sm" c="dimmed">
+            No medications tracked yet. Add some in{" "}
+            <strong>Medicines</strong> first.
+          </Text>
+        )}
+        {!medicinesLoading &&
+          medicines.map((med) => {
+            const checked = selectedMeds[med.id] !== undefined;
+            return (
+              <Group key={med.id} align="center" gap="sm">
+                <Checkbox
+                  label={med.name}
+                  checked={checked}
+                  onChange={(e) => toggleMedicine(med.id, e.currentTarget.checked)}
+                  styles={{ label: { fontWeight: 500 } }}
+                />
+                {checked && (
+                  <TextInput
+                    placeholder="Dose (e.g. 50mg)"
+                    value={selectedMeds[med.id]}
+                    onChange={(e) => setDose(med.id, e.currentTarget.value)}
+                    style={{ flex: 1 }}
+                  />
+                )}
+              </Group>
+            );
+          })}
+      </Stack>
 
       <Button onClick={handleSubmit} size="md">
         Submit
