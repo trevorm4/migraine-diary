@@ -1,6 +1,5 @@
 import React, { useState, useEffect } from "react";
 import {
-  Select,
   TextInput,
   Button,
   Stack,
@@ -12,6 +11,7 @@ import {
   Modal,
   NumberInput,
   Checkbox,
+  MultiSelect,
   Loader,
   Divider,
 } from "@mantine/core";
@@ -27,7 +27,7 @@ interface EntryData {
   duration_hours: number;
   description: string;
   severity: number;
-  headache_location: HeadacheLocation;
+  headache_locations: HeadacheLocation[];
 }
 
 function excludeDate(date: Date): boolean {
@@ -46,11 +46,12 @@ const SubmitEntry: React.FC = () => {
   const [modalOpened, setModalOpened] = useState(false);
   const [formData, setFormData] = useState<EntryData>({
     severity: 5,
-    headache_location: HeadacheLocation.Temple,
+    headache_locations: [],
     start_date: new Date(),
     duration_hours: 4,
     description: "",
   });
+  const [locationError, setLocationError] = useState<string | null>(null);
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [medicinesLoading, setMedicinesLoading] = useState(true);
   const [selectedMeds, setSelectedMeds] = useState<Record<number, string>>({});
@@ -73,12 +74,13 @@ const SubmitEntry: React.FC = () => {
   const resetForm = () => {
     setFormData({
       severity: 5,
-      headache_location: HeadacheLocation.Temple,
+      headache_locations: [],
       start_date: new Date(),
       duration_hours: 4,
       description: "",
     });
     setSelectedMeds({});
+    setLocationError(null);
   };
 
   const toggleMedicine = (medId: number, checked: boolean) => {
@@ -98,6 +100,13 @@ const SubmitEntry: React.FC = () => {
   };
 
   const handleSubmit = async () => {
+    setLocationError(null);
+
+    if (formData.headache_locations.length === 0) {
+      setLocationError("Select at least one headache section.");
+      return;
+    }
+
     const startDate = new Date(formData.start_date);
     const endDate = new Date(
       startDate.getTime() + formData.duration_hours * 60 * 60 * 1000
@@ -181,13 +190,17 @@ const SubmitEntry: React.FC = () => {
         />
       </Stack>
 
-      <Select
-        label="Headache Type"
-        placeholder="Select a type..."
-        value={formData.headache_location}
-        onChange={(value) =>
-          setFormData({ ...formData, headache_location: value as HeadacheLocation })
-        }
+      <MultiSelect
+        label="Headache Sections"
+        placeholder="Select one or more sections..."
+        value={formData.headache_locations}
+        onChange={(value) => {
+          setFormData({
+            ...formData,
+            headache_locations: value as HeadacheLocation[],
+          });
+          if (value.length > 0) setLocationError(null);
+        }}
         data={getEnumKeys(HeadacheLocation).map((key) => {
           const headacheValue = HeadacheLocation[key];
 
@@ -196,6 +209,7 @@ const SubmitEntry: React.FC = () => {
             label: key,
           };
         })}
+        error={locationError ?? undefined}
         renderOption={({ option }) => {
           const color = HEADACHE_COLORS[option.value as HeadacheLocation];
           return (

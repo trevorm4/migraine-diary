@@ -35,6 +35,6 @@ export interface Entry {
   end_dt: string;
   description: string;
   severity: number;
-  headache_location: HeadacheLocation;
+  headache_locations: HeadacheLocation[];
   medications: MedicineUse[];
 }

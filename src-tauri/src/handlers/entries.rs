@@ -4,7 +4,7 @@ use serde::{Deserialize, Serialize};
 use tauri::State;
 use crate::models::entry;
 use crate::models::entry::HeadacheLocation;
-use crate::models::{entry_medicine, medicine};
+use crate::models::{entry_medicine, entry_location, medicine};
 use crate::handlers::shared::AppState;
 use chrono::{DateTime, Utc};
 use std::collections::HashMap;
@@ -38,7 +38,7 @@ pub struct SubmitEntryRequest {
     start_date: DateTime<Utc>,
     end_date: DateTime<Utc>,
     severity: i8,
-    headache_location: HeadacheLocation,
+    headache_locations: Vec<HeadacheLocation>,
     medications: Vec<MedicineDose>,
 }
 
@@ -49,7 +49,7 @@ pub struct EditEntryRequest {
     start_date: DateTime<Utc>,
     end_date: DateTime<Utc>,
     severity: i8,
-    headache_location: HeadacheLocation,
+    headache_locations: Vec<HeadacheLocation>,
     medications: Vec<MedicineDose>,
 }
 
@@ -64,7 +64,7 @@ pub struct EntryWithMeds {
     pub id: i32,
     pub start_dt: DateTime<Utc>,
     pub end_dt: DateTime<Utc>,
-    pub headache_location: HeadacheLocation,
+    pub headache_locations: Vec<HeadacheLocation>,
     pub severity: i8,
     pub description: String,
     pub medications: Vec<MedicineUse>,
@@ -98,6 +98,31 @@ async fn replace_medications(
     Ok(())
 }
 
+async fn replace_locations(
+    db: &DatabaseConnection,
+    entry_id: i32,
+    locations: Vec<HeadacheLocation>,
+) -> Result<(), sea_orm::DbErr> {
+    entry_location::Entity::delete_many()
+        .filter(entry_location::Column::EntryId.eq(entry_id))
+        .exec(db)
+        .await?;
+
+    let rows: Vec<entry_location::ActiveModel> = locations
+        .into_iter()
+        .map(|loc| entry_location::ActiveModel {
+            entry_id: Set(entry_id),
+            location: Set(loc),
+            ..Default::default()
+        })
+        .collect();
+
+    if !rows.is_empty() {
+        entry_location::Entity::insert_many(rows).exec(db).await?;
+    }
+    Ok(())
+}
+
 
 #[tauri::command]
 pub async fn submit_entry(state: State<'_, AppState>, request: SubmitEntryRequest) -> Result<(), String> {
@@ -105,7 +130,6 @@ pub async fn submit_entry(state: State<'_, AppState>, request: SubmitEntryReques
     let entry = entry::ActiveModel{
         description: Set(request.description),
         severity: Set(request.severity),
-        headache_location: Set(request.headache_location),
         start_dt: Set(request.start_date),
         end_dt: Set(request.end_date),
         ..Default::default()
@@ -114,6 +138,7 @@ pub async fn submit_entry(state: State<'_, AppState>, request: SubmitEntryReques
     let entry_id = result.last_insert_id;
 
     replace_medications(db, entry_id, request.medications).await.map_err(|e| e.to_string())?;
+    replace_locations(db, entry_id, request.headache_locations).await.map_err(|e| e.to_string())?;
     Ok(())
 }
 
@@ -136,12 +161,12 @@ pub async fn edit_entry(state: State<'_, AppState>, request: EditEntryRequest) -
     let mut am: entry::ActiveModel = entry.into();
     am.start_dt = Set(request.start_date);
     am.end_dt = Set(request.end_date);
-    am.headache_location = Set(request.headache_location);
     am.severity = Set(request.severity);
     am.description = Set(request.description);
     match am.update(db).await {
         Ok(m) => {
             replace_medications(db, m.id, request.medications).await.map_err(|e| e.to_string())?;
+            replace_locations(db, m.id, request.headache_locations).await.map_err(|e| e.to_string())?;
             Ok(m)
         },
         Err(e) => Err(e.to_string())
@@ -167,6 +192,11 @@ pub async fn delete_entry(state: State<'_, AppState>, request: DeleteEntryReques
         Ok(_) => {
             entry_medicine::Entity::delete_many()
                 .filter(entry_medicine::Column::EntryId.eq(request.id))
+                .exec(db)
+                .await
+                .map_err(|e| e.to_string())?;
+            entry_location::Entity::delete_many()
+                .filter(entry_location::Column::EntryId.eq(request.id))
                 .exec(db)
                 .await
                 .map_err(|e| e.to_string())?;
@@ -231,16 +261,38 @@ pub async fn get_entries(state: State<'_, AppState>, request: GetEntriesRequest)
             });
     }
 
+    let loc_rows: Vec<entry_location::Model> = if ids.is_empty() {
+        vec![]
+    } else {
+        entry_location::Entity::find()
+            .filter(entry_location::Column::EntryId.is_in(ids.clone()))
+            .order_by_asc(entry_location::Column::Id)
+            .all(db)
+            .await
+            .map_err(|e| e.to_string())?
+    };
+
+    let mut locs_by_entry: HashMap<i32, Vec<HeadacheLocation>> = HashMap::new();
+    for row in loc_rows {
+        locs_by_entry
+            .entry(row.entry_id)
+            .or_default()
+            .push(row.location);
+    }
+
     Ok(entries
         .into_iter()
-        .map(|e| EntryWithMeds {
-            id: e.id,
-            start_dt: e.start_dt,
-            end_dt: e.end_dt,
-            headache_location: e.headache_location,
-            severity: e.severity,
-            description: e.description,
-            medications: by_entry.remove(&e.id).unwrap_or_default(),
+        .map(|e| {
+            let headaches = locs_by_entry.remove(&e.id);
+            EntryWithMeds {
+                id: e.id,
+                start_dt: e.start_dt,
+                end_dt: e.end_dt,
+                headache_locations: headaches.unwrap_or_default(),
+                severity: e.severity,
+                description: e.description,
+                medications: by_entry.remove(&e.id).unwrap_or_default(),
+            }
         })
         .collect())
 }
