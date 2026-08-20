@@ -21,7 +21,7 @@ interface Entry {
   end_dt: string;
   description: string;
   severity: number;
-  headache_location: HeadacheLocation;
+  headache_locations: HeadacheLocation[];
   medications: MedicineUse[];
 }
 
@@ -130,18 +130,19 @@ const calculateStatsByType = (entries: Entry[]): HeadacheStats[] => {
 
   entries.forEach((entry) => {
     const duration = (new Date(entry.end_dt).getTime() - new Date(entry.start_dt).getTime()) / (1000 * 60); // minutes
+    const primary = entry.headache_locations[0] ?? HeadacheLocation.Temple;
 
-    if (!statsByType[entry.headache_location]) {
-      statsByType[entry.headache_location] = {
+    if (!statsByType[primary]) {
+      statsByType[primary] = {
         totalDuration: 0,
         totalSeverity: 0,
         count: 0,
       };
     }
 
-    statsByType[entry.headache_location].totalDuration += duration;
-    statsByType[entry.headache_location].totalSeverity += entry.severity;
-    statsByType[entry.headache_location].count += 1;
+    statsByType[primary].totalDuration += duration;
+    statsByType[primary].totalSeverity += entry.severity;
+    statsByType[primary].count += 1;
   });
 
   return Object.entries(statsByType).map(([type, stats]) => ({
@@ -164,7 +165,10 @@ const prepareChartData = (entries: Entry[]) => {
     });
 
     if (!groupedByDate[dateKey]) {
-      groupedByDate[dateKey] = { severities: [], type: entry.headache_location };
+      groupedByDate[dateKey] = {
+        severities: [],
+        type: entry.headache_locations[0] ?? HeadacheLocation.Temple,
+      };
     }
 
     groupedByDate[dateKey].severities.push(entry.severity);

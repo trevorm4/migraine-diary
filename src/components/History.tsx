@@ -12,7 +12,7 @@ import {
   Modal,
   Button,
   Textarea,
-  Select,
+  MultiSelect,
   NumberInput,
   ActionIcon,
   Checkbox,
@@ -33,7 +33,7 @@ interface Entry {
   end_dt: string;
   description: string;
   severity: number;
-  headache_location: HeadacheLocation;
+  headache_locations: HeadacheLocation[];
   medications: MedicineUse[];
 }
 
@@ -43,7 +43,7 @@ interface EditEntryRequest {
   start_date: string;
   end_date: string;
   severity: number;
-  headache_location: HeadacheLocation;
+  headache_locations: HeadacheLocation[];
   medications: MedicineDose[];
 }
 
@@ -111,11 +111,14 @@ function DeleteModal({ opened, onClose, entry, onDelete }: DeleteModalProps) {
                     width: "12px",
                     height: "12px",
                     borderRadius: "50%",
-                    backgroundColor: HEADACHE_COLORS[entry.headache_location],
+                    backgroundColor:
+                      HEADACHE_COLORS[entry.headache_locations[0]],
                     flexShrink: 0,
                   }}
                 />
-                <Text size="sm" fw={600}>{entry.headache_location}</Text>
+                <Text size="sm" fw={600}>
+                  {entry.headache_locations.join(", ")}
+                </Text>
               </Group>
               <Text size="xs" c="dimmed">
                 {formatDate(entry.start_dt)} - {formatDate(entry.end_dt)}
@@ -149,8 +152,8 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
   const [startDate, setStartDate] = useState<string | null>(null);
   const [endDate, setEndDate] = useState<string | null>(null);
   const [severity, setSeverity] = useState<number>(5);
-  const [headacheLocation, setHeadacheLocation] = useState<HeadacheLocation>(
-    HeadacheLocation.Front
+  const [headacheLocations, setHeadacheLocations] = useState<HeadacheLocation[]>(
+    []
   );
   const [medicines, setMedicines] = useState<Medicine[]>([]);
   const [selectedMeds, setSelectedMeds] = useState<Record<number, string>>({});
@@ -174,7 +177,7 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
       setStartDate(entry.start_dt);
       setEndDate(entry.end_dt);
       setSeverity(entry.severity);
-      setHeadacheLocation(entry.headache_location);
+      setHeadacheLocations(entry.headache_locations);
       setSelectedMeds(
         Object.fromEntries(
           entry.medications.map((m) => [m.medicine_id, m.dose ?? ""])
@@ -217,7 +220,7 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
         start_date: new Date(startDate).toISOString(),
         end_date: new Date(endDate).toISOString(),
         severity,
-        headache_location: headacheLocation,
+        headache_locations: headacheLocations,
         medications,
       });
       onClose();
@@ -231,10 +234,11 @@ function EditModal({ opened, onClose, entry, onSave }: EditModalProps) {
   return (
     <Modal opened={opened} onClose={onClose} title="Edit Entry" size="md">
       <Stack gap="md">
-        <Select
-          label="Headache Location"
-          value={headacheLocation}
-          onChange={(value) => setHeadacheLocation(value as HeadacheLocation)}
+        <MultiSelect
+          label="Headache Sections"
+          placeholder="Select one or more sections..."
+          value={headacheLocations}
+          onChange={(value) => setHeadacheLocations(value as HeadacheLocation[])}
           data={getEnumKeys(HeadacheLocation).map((key) => ({
             value: HeadacheLocation[key],
             label: key,
@@ -332,7 +336,7 @@ function EntriesTable({
   return (
     <Stack mt="md" gap="md">
       {currentEntries.map((entry) => {
-        const color = HEADACHE_COLORS[entry.headache_location];
+        const color = HEADACHE_COLORS[entry.headache_locations[0]];
         return (
           <Card key={entry.id} shadow="sm" padding="lg" radius="md" withBorder>
             <Stack gap="xs">
@@ -347,7 +351,7 @@ function EntriesTable({
                       flexShrink: 0,
                     }}
                   />
-                  <Text fw={600}>{entry.headache_location}</Text>
+                  <Text fw={600}>{entry.headache_locations.join(", ")}</Text>
                 </Group>
                 <Group gap="xs">
                   <Text size="sm" c="dimmed">
