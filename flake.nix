@@ -114,7 +114,7 @@
             bun
             nodejs
           ];
-          buildInputs = runtimeDeps ++ pkgConfigDirs;
+          buildInputs = runtimeDeps ++ pkgConfigDirs ++ [ pkgs.sqlite ];
           desktopItems = [ desktopItem ];
           postFixup = ''
             wrapProgram $out/bin/migraine-diary \
@@ -162,6 +162,7 @@
             atk
             dbus
             glibc
+            sqlite
           ];
 
           shellHook = ''
